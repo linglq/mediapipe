@@ -83,35 +83,41 @@ jobs:
           --incompatible_enable_cc_toolchain_resolution \
           //mediapipe/tasks/cc/vision/face_landmarker:face_landmarker
 
-    # 🌟 修改步骤：提取第三方依赖头文件到当前工作区目录 (不再打包为 tar.gz)
+    # 🌟 步骤 1：提取第三方依赖头文件 (Abseil, TFLite 等)
     - name: Collect External Headers into Directory
       run: |
         echo "Extracting external headers from Bazel cache..."
         BAZEL_OUT=$(bazel info output_base)
-        
-        # 将目标目录设置为当前工作区下的 mp_external_headers 文件夹
         DEST="${{ github.workspace }}/mp_external_headers"
         mkdir -p "$DEST/absl" "$DEST/tensorflow"
 
-        # 1. 拷贝 absl 头文件
         echo "Copying Abseil (absl) headers..."
         cp -r "$BAZEL_OUT/external/com_google_absl/absl" "$DEST/"
 
-        # 2. 拷贝 TFLite 头文件
-        # 注意：必须先 cd 到 org_tensorflow 目录，这样 cpio 提取出的才是干净的相对路径 (tensorflow/lite/...)
         echo "Copying TensorFlow Lite headers..."
         cd "$BAZEL_OUT/external/org_tensorflow"
         find tensorflow/lite -name "*.h" | cpio -pdm "$DEST/"
-        cd - > /dev/null # 返回原工作目录
+        cd - > /dev/null
 
-        # 3. 检查其他关键依赖 (仅打印日志，方便确认)
-        echo "Checking for other dependencies (glog, Eigen, etc.) in Bazel cache:"
-        ls "$BAZEL_OUT/external/" | grep -E "eigen|glog|com_github" || echo "No matching extra dependencies found."
+        echo "External headers extraction complete."
 
-        echo "Header extraction complete. Directory structure:"
-        ls -la "$DEST"
+    # 🌟 步骤 2：提取 MediaPipe 生成的 Protobuf 头文件 (.pb.h)
+    - name: Collect Proto Headers (.pb.h) into Directory
+      run: |
+        echo "Extracting .pb.h headers from bazel-bin..."
+        DEST="${{ github.workspace }}/mp_proto_headers"
+        mkdir -p "$DEST"
 
-    # 🌟 更新步骤：直接上传编译产物和头文件目录
+        # 核心优化：先 cd 到 bazel-bin，这样 cpio 提取出的目录结构就是干净的 mediapipe/...
+        # 而不会包含多余的 bazel-bin/ 前缀，极大方便后续在 Xcode 中配置 Header Search Paths。
+        cd bazel-bin
+        find mediapipe -name "*.pb.h" | cpio -pdm "$DEST/"
+        cd - > /dev/null
+
+        echo "Proto headers extraction complete. Directory structure:"
+        ls -la "$DEST/mediapipe" | head -n 10
+
+    # 🌟 步骤 3：统一上传所有产物 (编译结果 + 两类头文件目录)
     - name: Upload Build Artifacts
       if: success() 
       uses: actions/upload-artifact@v4
@@ -120,6 +126,8 @@ jobs:
         path: |
           # 1. 编译生成的静态库/目标文件目录
           bazel-bin/mediapipe/tasks/cc/vision/face_landmarker/
-          # 2. 第三方依赖头文件目录 (直接上传文件夹)
+          # 2. 第三方依赖头文件目录 (Abseil, TFLite 等)
           mp_external_headers/
+          # 3. Protobuf 生成的头文件目录 (.pb.h)
+          mp_proto_headers/
         retention-days: 14 
