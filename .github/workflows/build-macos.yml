@@ -40,26 +40,6 @@ jobs:
         echo "Installing OpenCV and FFmpeg..."
         brew install opencv ffmpeg
 
-    # 🌟 新增：打印 OpenCV 真实安装路径和头文件结构，方便调试
-    - name: DEBUG Print OpenCV directory structure
-      run: |
-        echo "========================================="
-        echo "DEBUG: OpenCV Installation Info"
-        echo "========================================="
-        OPENCV_PREFIX=$(brew --prefix opencv)
-        echo "Homebrew OpenCV Prefix: $OPENCV_PREFIX"
-        
-        echo "Listing include directory:"
-        ls -la $OPENCV_PREFIX/include || true
-        
-        echo "Listing opencv4 directory (if exists):"
-        ls -la $OPENCV_PREFIX/include/opencv4 || true
-        
-        echo "Finding version.hpp (The file we are looking for):"
-        find $OPENCV_PREFIX -name "version.hpp" || true
-        echo "========================================="
-
-    # 🌟 核心修复：使用安全的字符串替换，彻底避免正则表达式的转义陷阱
     - name: Patch WORKSPACE and BUILD files for macOS (Safe String Replace)
       run: |
         python3 -c '
@@ -69,12 +49,8 @@ jobs:
         with open("WORKSPACE", "r") as f:
             ws_content = f.read()
 
-        # 使用安全的纯字符串替换，避免 re.sub 带来的转义和语法错误
-        # 替换 macos_opencv 的路径 (Intel Mac 默认路径 -> Apple Silicon Homebrew 路径)
         ws_content = ws_content.replace("path = \"/usr/local\",", "path = \"/opt/homebrew\",")
         ws_content = ws_content.replace("path = \"/usr/local/opt/opencv\",", "path = \"/opt/homebrew/opt/opencv\",")
-        
-        # 替换 macos_ffmpeg 的路径
         ws_content = ws_content.replace("path = \"/usr/local/opt/ffmpeg\",", "path = \"/opt/homebrew/opt/ffmpeg\",")
 
         with open("WORKSPACE", "w") as f:
@@ -85,39 +61,65 @@ jobs:
         with open(build_file, "r") as f:
             build_content = f.read()
 
-        # 1. 更新 PREFIX (从 opt/opencv@3 改为 opt/opencv)
         build_content = build_content.replace("PREFIX = \"opt/opencv@3\"", "PREFIX = \"opt/opencv\"")
-        
-        # 2. 更新头文件搜索路径 (适配 OpenCV 4 的 include/opencv4/opencv2 目录结构)
         build_content = build_content.replace("\"include/opencv2/**/*.h*\"", "\"include/opencv4/opencv2/**/*.h*\"")
-        
-        # 3. 更新 includes 路径
         build_content = build_content.replace("includes = [paths.join(PREFIX, \"include/\")]", "includes = [paths.join(PREFIX, \"include/opencv4\")]")
 
         with open(build_file, "w") as f:
             f.write(build_content)
 
-        print("Configuration patched successfully without syntax errors!")
+        print("Configuration patched successfully!")
         '
 
     - name: Verify Bazel version
       run: bazel --version
 
-    # 🌟 核心编译步骤
     - name: Build MediaPipe Face Landmarker
       run: |
-        echo "Starting build with Bazel 7.4.1, Xcode 15.4, and safely patched OpenCV 4 config..."
+        echo "Starting build with Bazel 7.4.1, Xcode 15.4, and patched OpenCV 4 config..."
         
         bazel build -c opt --config=macos \
           --define MEDIAPIPE_DISABLE_GPU=1 \
           --incompatible_enable_cc_toolchain_resolution \
           //mediapipe/tasks/cc/vision/face_landmarker:face_landmarker
 
+    # 🌟 修改步骤：提取第三方依赖头文件到当前工作区目录 (不再打包为 tar.gz)
+    - name: Collect External Headers into Directory
+      run: |
+        echo "Extracting external headers from Bazel cache..."
+        BAZEL_OUT=$(bazel info output_base)
+        
+        # 将目标目录设置为当前工作区下的 mp_external_headers 文件夹
+        DEST="${{ github.workspace }}/mp_external_headers"
+        mkdir -p "$DEST/absl" "$DEST/tensorflow"
+
+        # 1. 拷贝 absl 头文件
+        echo "Copying Abseil (absl) headers..."
+        cp -r "$BAZEL_OUT/external/com_google_absl/absl" "$DEST/"
+
+        # 2. 拷贝 TFLite 头文件
+        # 注意：必须先 cd 到 org_tensorflow 目录，这样 cpio 提取出的才是干净的相对路径 (tensorflow/lite/...)
+        echo "Copying TensorFlow Lite headers..."
+        cd "$BAZEL_OUT/external/org_tensorflow"
+        find tensorflow/lite -name "*.h" | cpio -pdm "$DEST/"
+        cd - > /dev/null # 返回原工作目录
+
+        # 3. 检查其他关键依赖 (仅打印日志，方便确认)
+        echo "Checking for other dependencies (glog, Eigen, etc.) in Bazel cache:"
+        ls "$BAZEL_OUT/external/" | grep -E "eigen|glog|com_github" || echo "No matching extra dependencies found."
+
+        echo "Header extraction complete. Directory structure:"
+        ls -la "$DEST"
+
+    # 🌟 更新步骤：直接上传编译产物和头文件目录
     - name: Upload Build Artifacts
       if: success() 
       uses: actions/upload-artifact@v4
       with:
-        name: mediapipe-face-landmarker-macos14-v0.10.35
+        name: mediapipe-macos14-v0.10.35-full-package
         path: |
+          # 1. 编译生成的静态库/目标文件目录
           bazel-bin/mediapipe/tasks/cc/vision/face_landmarker/
+          # 2. 第三方依赖头文件目录 (直接上传文件夹)
+          mp_external_headers/
         retention-days: 14 
