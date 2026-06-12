@@ -41,7 +41,7 @@ jobs:
         brew install opencv ffmpeg
 
     # 🌟 新增：打印 OpenCV 真实安装路径和头文件结构，方便调试
-    - name: DEBUG: Print OpenCV directory structure
+    - name: DEBUG Print OpenCV directory structure
       run: |
         echo "========================================="
         echo "DEBUG: OpenCV Installation Info"
