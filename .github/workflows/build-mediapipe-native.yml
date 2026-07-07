@@ -45,6 +45,18 @@ jobs:
         run: |
           bash ./setup_android_sdk_and_ndk.sh ~/Android/Sdk ~/Android/Sdk/ndk r28b --accept-licenses
 
+      - name: Patch WORKSPACE for Android toolchain
+        run: |
+          if ! grep -q "android_sdk_repository" WORKSPACE; then
+            echo "android_sdk_repository(name = \"androidsdk\", path = \"$ANDROID_HOME\")" >> WORKSPACE
+            echo "android_ndk_repository(name = \"androidndk\", api_level = 21, path = \"$ANDROID_NDK_HOME\")" >> WORKSPACE
+            echo "bind(name = \"android/crosstool\", actual = \"@androidndk//:toolchain\")" >> WORKSPACE
+            echo "register_toolchains(\"@androidsdk//:all\", \"@androidndk//:all\")" >> WORKSPACE
+            echo "WORKSPACE patched with Android SDK/NDK repos."
+          else
+            echo "WORKSPACE already patched, skipping."
+          fi
+
       - name: Inject cc_binary wrapper and BUILD rule
         run: |
           if ! grep -q "libmediapipe_face_landmarker" BUILD.bazel; then
