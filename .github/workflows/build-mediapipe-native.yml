@@ -29,6 +29,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Install Python dependencies
         run: |
@@ -57,6 +58,23 @@ jobs:
             echo "WORKSPACE already patched, skipping."
           fi
 
+      - name: Cache Bazel repository cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('.bazelversion', 'WORKSPACE', 'MODULE.bazel') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
+      - name: Restore Bazel disk cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('.bazelversion', 'WORKSPACE', 'MODULE.bazel') }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-${{ matrix.abi }}-
+            bazel-disk-${{ runner.os }}-
+
       - name: Inject cc_binary wrapper and BUILD rule
         run: |
           if ! grep -q "libmediapipe_face_landmarker" BUILD.bazel; then
@@ -68,6 +86,8 @@ jobs:
           bazel build -c opt \
             --config=${{ matrix.bazel_config }} \
             --define MEDIAPIPE_GPU_BUFFER_USE_GL=1 \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
             //:libmediapipe_face_landmarker.so
 
       - name: Extract .so and headers

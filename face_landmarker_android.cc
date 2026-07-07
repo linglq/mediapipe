@@ -20,7 +20,11 @@ int main(int argc, char** argv) {
     g_prevent_dce = reinterpret_cast<void*>(&FaceLandmarker::Create);
 
     // Force reference to GlTextureBuffer::Wrap (static factory)
-    g_prevent_dce = reinterpret_cast<void*>(&GlTextureBuffer::Wrap);
+    using WrapFunc = std::unique_ptr<GlTextureBuffer> (*)(
+        GLenum, GLuint, int, int, GpuBufferFormat,
+        GlTextureBuffer::DeletionCallback);
+    g_prevent_dce = reinterpret_cast<void*>(
+        static_cast<WrapFunc>(&GlTextureBuffer::Wrap));
 
     // Force reference to Image (GPU-buffer ctor)
     (void)sizeof(mediapipe::Image);
