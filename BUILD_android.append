@@ -1,0 +1,15 @@
+# Bazel cc_binary appended to MediaPipe root BUILD.bazel during CI.
+# Produces libmediapipe_face_landmarker.so with --whole-archive to prevent DCE.
+cc_binary(
+    name = "libmediapipe_face_landmarker.so",
+    srcs = ["face_landmarker_android.cc"],
+    linkshared = 1,
+    linkstatic = 1,
+    linkopts = [
+        "-Wl,--whole-archive",
+        "-Wl,--no-allow-shlib-undefined",
+    ],
+    deps = [
+        "//mediapipe/tasks/cc/vision/face_landmarker:face_landmarker",
+    ],
+)

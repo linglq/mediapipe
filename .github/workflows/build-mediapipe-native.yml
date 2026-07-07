@@ -1,0 +1,68 @@
+name: Build MediaPipe Native Library
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'face_landmarker_android.cc'
+      - 'BUILD_android.append'
+      - '.github/workflows/build-mediapipe-native.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
+        include:
+          - abi: arm64-v8a
+            bazel_config: android_arm64
+          - abi: armeabi-v7a
+            bazel_config: android_arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject cc_binary wrapper and BUILD rule
+        run: |
+          cp face_landmarker_android.cc mediapipe/face_landmarker_android.cc
+          cat BUILD_android.append >> BUILD.bazel
+
+      - uses: bazelbuild/setup-bazelisk@v2
+
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-${{ matrix.abi }}-v3
+
+      - name: Build FaceLandmarker .so
+        run: |
+          bazel build -c opt \
+            --config=${{ matrix.bazel_config }} \
+            --define MEDIAPIPE_GPU_BUFFER_USE_GL=1 \
+            //:libmediapipe_face_landmarker.so
+
+      - name: Extract .so and headers
+        run: |
+          mkdir -p output/${{ matrix.abi }}/libs
+          mkdir -p output/${{ matrix.abi }}/include
+
+          cp bazel-bin/libmediapipe_face_landmarker.so \
+             output/${{ matrix.abi }}/libs/
+
+          for dir in \
+            mediapipe \
+            bazel-mediapipe/external/com_google_absl \
+            bazel-mediapipe/external/com_google_protobuf/src \
+            bazel-mediapipe/external/flatbuffers/include \
+            bazel-mediapipe/external/eigen3; do
+            if [ -d "$dir" ]; then
+              find "$dir" -name "*.h" -exec cp --parents {} output/${{ matrix.abi }}/include/ \;
+            fi
+          done
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediapipe-native-${{ matrix.abi }}
+          path: output/${{ matrix.abi }}/
