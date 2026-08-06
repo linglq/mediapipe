@@ -1,0 +1,25 @@
+name: Download and Artifact NDK
+
+on:
+  workflow_dispatch: # 允许你在 GitHub 页面上手动点击运行
+
+jobs:
+  download-and-upload:
+    runs-on: macos-latest # 使用 macOS 环境以匹配 .dmg 文件
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Android NDK
+        run: |
+          echo "正在下载 NDK..."
+          curl -L -o android-ndk-r29-darwin.dmg https://dl.google.com/android/repository/android-ndk-r29-darwin.dmg
+          echo "下载完成！"
+
+      - name: Upload NDK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ndk-r29-darwin # 下载后生成的压缩包名称
+          path: android-ndk-r29-darwin.dmg # 要上传的文件路径
+          retention-days: 1 # 生成文件保留天数（最多 90 天）
