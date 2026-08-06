@@ -1,11 +1,11 @@
-name: Download and Artifact NDK
+name: Download NDK and Transfer via Rsync
 
 on:
-  workflow_dispatch: # 允许你在 GitHub 页面上手动点击运行
+  workflow_dispatch: # 手动触发
 
 jobs:
-  download-and-upload:
-    runs-on: macos-latest # 使用 macOS 环境以匹配 .dmg 文件
+  download-and-transfer:
+    runs-on: ubuntu-latest # 使用 Linux 环境，原生支持 rsync 和 ssh
 
     steps:
       - name: Checkout repository
@@ -17,9 +17,22 @@ jobs:
           curl -L -o android-ndk-r29-darwin.dmg https://dl.google.com/android/repository/android-ndk-r29-darwin.dmg
           echo "下载完成！"
 
-      - name: Upload NDK as Artifact
-        uses: actions/upload-artifact@v4
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
         with:
-          name: android-ndk-r29-darwin # 下载后生成的压缩包名称
-          path: android-ndk-r29-darwin.dmg # 要上传的文件路径
-          retention-days: 1 # 生成文件保留天数（最多 90 天）
+          key: ${{ secrets.SSH_PRIVATE_KEY_ZBAGW }}
+          name: id_github_actions # 密钥别名
+          known_hosts: "unnecessary_but_required_field" # 占位符，下面会用 keyscan 动态获取
+          if_key_exists: replace
+
+      - name: Add Remote Host to Known Hosts
+        run: |
+          # 自动获取远程服务器的 SSH 指纹，防止连接时因安全提示（Host key verification）中断
+          ssh-keyscan -H 8.134.188.156 >> ~/.ssh/known_hosts
+
+      - name: Transfer File via Rsync
+        run: |
+          echo "开始传输文件到远程服务器..."
+          # -a: 归档模式 -v: 显示详情 -z: 压缩传输 -P: 显示进度并允许断点续传
+          rsync -avzP android-ndk-r29-darwin.dmg zbaer@8.134.188.156:~
+          echo "文件传输成功！"
